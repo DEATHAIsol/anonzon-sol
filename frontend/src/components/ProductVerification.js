@@ -56,7 +56,7 @@ const ProductVerification = ({ onNext, onAddMultiple, updateOrderData, cartItems
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('http://localhost:4000/api/check-product', {
+      const response = await fetch(`${API_BASE_URL}/check-product`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
