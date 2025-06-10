@@ -9,9 +9,7 @@ import {
   CardMedia,
   Alert,
   Divider,
-  Modal,
-  TextField,
-  CircularProgress
+  Modal
 } from '@mui/material';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
@@ -39,15 +37,10 @@ function Payment({ onBack, orderData }) {
         });
         setSolPrice(parseFloat(res.data.price));
       } catch (err) {
-        console.error('Failed to fetch SOL price:', err);
         setSolPrice(null);
       }
     };
     fetchSolPrice();
-
-    // Refresh price every minute
-    const interval = setInterval(fetchSolPrice, 60000);
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -59,75 +52,6 @@ function Payment({ onBack, orderData }) {
       return () => clearTimeout(timer);
     }
   }, [paymentStatus, navigate]);
-
-  useEffect(() => {
-    // Add Phantom wallet integration logic
-    let userPublicKey = null;
-    let userSignature = null;
-    const connectBtn = document.getElementById('connect-phantom');
-    const signBtn = document.getElementById('sign-message');
-    const submitBtn = document.getElementById('submit-transaction');
-
-    if (connectBtn) {
-      connectBtn.onclick = async function() {
-        if (window.solana && window.solana.isPhantom) {
-          try {
-            const resp = await window.solana.connect();
-            userPublicKey = resp.publicKey.toString();
-            alert('Connected: ' + userPublicKey);
-            if (signBtn) signBtn.disabled = false;
-          } catch (err) {
-            alert('Connection rejected.');
-          }
-        } else {
-          alert('Phantom wallet not found. Please install it.');
-        }
-      };
-    }
-
-    if (signBtn) {
-      signBtn.onclick = async function() {
-        if (window.solana && window.solana.isPhantom) {
-          const message = new TextEncoder().encode('Paying for order #123'); // Customize message!
-          try {
-            const signed = await window.solana.signMessage(message, 'utf8');
-            userSignature = signed.signature;
-            alert('Message signed!');
-            if (submitBtn) submitBtn.disabled = false;
-          } catch (err) {
-            alert('Signing failed.');
-          }
-        }
-      };
-    }
-
-    if (submitBtn) {
-      submitBtn.onclick = async function() {
-        const txnId = document.getElementById('transaction-id').value.trim();
-        if (!txnId || !userSignature || !userPublicKey) {
-          alert('Please connect, sign, and enter transaction ID.');
-          return;
-        }
-        // Send to backend for verification
-        const res = await fetch('/api/verify-payment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            publicKey: userPublicKey,
-            signature: Array.from(userSignature), // send as array of bytes
-            message: 'Paying for order #123',
-            txnId: txnId
-          })
-        });
-        const data = await res.json();
-        if (data.success) {
-          alert('Payment verified!');
-        } else {
-          alert('Verification failed: ' + data.error);
-        }
-      };
-    }
-  }, []);
 
   const calculateFees = (basePrice) => {
     const shippingFee = basePrice < 100 ? basePrice * 0.10 : 10;
@@ -153,23 +77,15 @@ function Payment({ onBack, orderData }) {
     setLoading(true);
     setError('');
     try {
-      // TODO: Implement actual payment processing
-      // This is a placeholder for future implementation
-      console.log('Payment initiated with:', {
-        orderData,
-        totalAmount: totalFees.totalPrice,
-        solAmount,
-        timestamp: new Date().toISOString()
+      const response = await axios.post(`${API_BASE_URL}/payments/create-invoice`, {
+        email: orderData.shippingData.email || 'noemail@anon.com',
+        amount: solAmount
       });
-      
-      // Simulate payment processing
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
+      setInvoice(response.data);
       setModalOpen(true);
       setPaymentStatus('pending');
     } catch (err) {
-      setError('Payment processing failed. Please try again.');
-      console.error('Payment error:', err);
+      setError(err.response?.data?.error || 'Failed to create payment invoice');
     } finally {
       setLoading(false);
     }
@@ -192,59 +108,6 @@ function Payment({ onBack, orderData }) {
       setVerifyLoading(false);
     }
   };
-
-  const PaymentModal = () => (
-    <Modal
-      open={modalOpen}
-      onClose={() => setModalOpen(false)}
-      aria-labelledby="payment-modal-title"
-    >
-      <Box sx={{
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: { xs: '90%', sm: 400 },
-        bgcolor: 'rgba(30, 34, 45, 0.95)',
-        border: '1px solid rgba(255,255,255,0.13)',
-        borderRadius: 3,
-        boxShadow: 24,
-        p: 4,
-        color: 'white',
-        backdropFilter: 'blur(10px)'
-      }}>
-        <Typography id="payment-modal-title" variant="h6" component="h2" sx={{ mb: 2 }}>
-          Payment Instructions
-        </Typography>
-        <Typography sx={{ mb: 2 }}>
-          Amount to pay: {solAmount} SOL
-        </Typography>
-        <Typography sx={{ mb: 2, color: 'var(--accent-color)' }}>
-          This is a placeholder for payment implementation.
-        </Typography>
-        <button id="connect-phantom">Connect Phantom</button>
-        <button id="sign-message" disabled>Sign Payment Message</button>
-        <input type="text" id="transaction-id" placeholder="Transaction ID or Solscan link" />
-        <button id="submit-transaction" disabled>Submit Transaction</button>
-        <Button
-          fullWidth
-          variant="contained"
-          onClick={() => setModalOpen(false)}
-          sx={{
-            mt: 2,
-            background: 'linear-gradient(90deg, var(--accent-color) 0%, var(--accent-color-hover) 100%)',
-            color: '#fff',
-            '&:hover': {
-              background: 'linear-gradient(90deg, var(--accent-color-hover) 0%, var(--accent-color) 100%)',
-            }
-          }}
-        >
-          Close
-        </Button>
-      </Box>
-    </Modal>
-  );
-
   return (
     <Box className="privacy-container">
       <Typography variant="h5" className="privacy-title" gutterBottom sx={{ color: 'var(--text-primary)' }}>
@@ -379,21 +242,26 @@ function Payment({ onBack, orderData }) {
                 <Button
                   variant="contained"
                   onClick={handlePayNow}
-                  disabled={loading || !solPrice}
+                  disabled={loading || !solAmount}
+                  fullWidth
+                  className="privacy-button"
                   sx={{
+                    borderRadius: 99,
                     background: 'linear-gradient(90deg, var(--accent-color) 0%, var(--accent-color-hover) 100%)',
                     color: '#fff',
-                    minWidth: 200,
+                    fontWeight: 800,
+                    fontSize: 18,
+                    px: 4,
+                    py: 1.5,
+                    boxShadow: '0 2px 8px 0 rgba(255,153,0,0.12)',
+                    transition: 'all 0.18s',
                     '&:hover': {
                       background: 'linear-gradient(90deg, var(--accent-color-hover) 0%, var(--accent-color) 100%)',
+                      boxShadow: '0 4px 16px 0 rgba(255,153,0,0.18)',
                     }
                   }}
                 >
-                  {loading ? (
-                    <CircularProgress size={24} sx={{ color: 'white' }} />
-                  ) : (
-                    `Pay ${solAmount ? `${solAmount} SOL` : 'Now'}`
-                  )}
+                  {loading ? 'Processing...' : 'Pay Now'}
                 </Button>
               </Box>
               {error && (
@@ -413,7 +281,59 @@ function Payment({ onBack, orderData }) {
           </Card>
         </Grid>
       </Grid>
-      <PaymentModal />
+      <Modal
+        open={modalOpen}
+        onClose={() => !loading && setModalOpen(false)}
+        className="privacy-modal"
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(10, 14, 23, 0.8)'
+        }}
+      >
+        <Box className="privacy-card" sx={{ maxWidth: 500, width: '90%', p: 3, textAlign: 'center' }}>
+          <Typography variant="h6" gutterBottom>Send Payment</Typography>
+          {invoice && (
+            <>
+              <Typography variant="body1" sx={{ mb: 1 }}>Send exactly <b>{solAmount} SOL</b> to:</Typography>
+              <Typography variant="body2" sx={{ mb: 2, wordBreak: 'break-all' }}>{invoice.publicKey}</Typography>
+              <img src={invoice.qrCodeUrl} alt="QR Code" style={{ width: 180, marginBottom: 16, display: 'block', marginLeft: 'auto', marginRight: 'auto' }} />
+              <Typography variant="body2" sx={{ mb: 2 }}>Scan QR or copy address to pay from your wallet.</Typography>
+              <Divider sx={{ my: 2 }} />
+              <Typography variant="subtitle1" sx={{ mb: 1 }}>After sending payment, paste your transaction ID or Solscan link below:</Typography>
+              <input
+                type="text"
+                value={txnInput}
+                onChange={e => setTxnInput(e.target.value)}
+                placeholder="Transaction ID or Solscan link"
+                style={{ width: '100%', padding: 8, marginBottom: 12, borderRadius: 4, border: '1px solid #ccc', color: '#111', background: '#fff', textAlign: 'center' }}
+                disabled={verifyLoading || paymentStatus === 'paid'}
+              />
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={handleVerifyTxn}
+                  disabled={verifyLoading || !txnInput || paymentStatus === 'paid'}
+                  sx={{ width: '80%', maxWidth: 300 }}
+                >
+                  {verifyLoading ? 'Verifying...' : 'Submit Transaction'}
+                </Button>
+                {verifyResult && (
+                  <Alert severity={verifyResult.success ? 'success' : 'error'} sx={{ mb: 2, width: '100%' }}>
+                    {verifyResult.message}
+                    {verifyResult.success && verifyResult.amountReceived && (
+                      <><br />Amount received: {verifyResult.amountReceived} SOL</>
+                    )}
+                  </Alert>
+                )}
+                <Button variant="outlined" onClick={() => setModalOpen(false)} sx={{ width: '80%', maxWidth: 300 }}>Close</Button>
+              </Box>
+            </>
+          )}
+        </Box>
+      </Modal>
     </Box>
   );
 }
