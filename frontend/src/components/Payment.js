@@ -60,6 +60,75 @@ function Payment({ onBack, orderData }) {
     }
   }, [paymentStatus, navigate]);
 
+  useEffect(() => {
+    // Add Phantom wallet integration logic
+    let userPublicKey = null;
+    let userSignature = null;
+    const connectBtn = document.getElementById('connect-phantom');
+    const signBtn = document.getElementById('sign-message');
+    const submitBtn = document.getElementById('submit-transaction');
+
+    if (connectBtn) {
+      connectBtn.onclick = async function() {
+        if (window.solana && window.solana.isPhantom) {
+          try {
+            const resp = await window.solana.connect();
+            userPublicKey = resp.publicKey.toString();
+            alert('Connected: ' + userPublicKey);
+            if (signBtn) signBtn.disabled = false;
+          } catch (err) {
+            alert('Connection rejected.');
+          }
+        } else {
+          alert('Phantom wallet not found. Please install it.');
+        }
+      };
+    }
+
+    if (signBtn) {
+      signBtn.onclick = async function() {
+        if (window.solana && window.solana.isPhantom) {
+          const message = new TextEncoder().encode('Paying for order #123'); // Customize message!
+          try {
+            const signed = await window.solana.signMessage(message, 'utf8');
+            userSignature = signed.signature;
+            alert('Message signed!');
+            if (submitBtn) submitBtn.disabled = false;
+          } catch (err) {
+            alert('Signing failed.');
+          }
+        }
+      };
+    }
+
+    if (submitBtn) {
+      submitBtn.onclick = async function() {
+        const txnId = document.getElementById('transaction-id').value.trim();
+        if (!txnId || !userSignature || !userPublicKey) {
+          alert('Please connect, sign, and enter transaction ID.');
+          return;
+        }
+        // Send to backend for verification
+        const res = await fetch('/api/verify-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            publicKey: userPublicKey,
+            signature: Array.from(userSignature), // send as array of bytes
+            message: 'Paying for order #123',
+            txnId: txnId
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Payment verified!');
+        } else {
+          alert('Verification failed: ' + data.error);
+        }
+      };
+    }
+  }, []);
+
   const calculateFees = (basePrice) => {
     const shippingFee = basePrice < 100 ? basePrice * 0.10 : 10;
     const merchantFee = basePrice * 0.02;
@@ -153,6 +222,10 @@ function Payment({ onBack, orderData }) {
         <Typography sx={{ mb: 2, color: 'var(--accent-color)' }}>
           This is a placeholder for payment implementation.
         </Typography>
+        <button id="connect-phantom">Connect Phantom</button>
+        <button id="sign-message" disabled>Sign Payment Message</button>
+        <input type="text" id="transaction-id" placeholder="Transaction ID or Solscan link" />
+        <button id="submit-transaction" disabled>Submit Transaction</button>
         <Button
           fullWidth
           variant="contained"
